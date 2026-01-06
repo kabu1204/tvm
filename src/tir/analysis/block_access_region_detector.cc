@@ -345,11 +345,18 @@ ffi::Array<BufferRegion> BlockReadWriteDetector::CollectRegions(
     ICHECK_EQ(buffers[i]->shape.size(), regions[i].size());
     for (size_t j = 0; j < regions[i].size(); j++) {
       const tvm::arith::IntSet& range = regions[i][j];
-      if (range.CanProveSinglePoint(&ana_)) {
-        PrimExpr min = range.min();
-        region.push_back(Range::FromMinExtent(min, make_const(min.dtype(), 1)));
-      } else {
-        region.push_back(range.CoverRange(Range::FromMinExtent(0, buffers[i]->shape[j])));
+      // Try to prove single point access, fallback to cover range if analysis fails
+      // (e.g., due to divide-by-zero in symbolic simplification)
+      try {
+        if (range.CanProveSinglePoint(&ana_)) {
+          PrimExpr min = range.min();
+          region.push_back(Range::FromMinExtent(min, make_const(min.dtype(), 1)));
+        } else {
+          region.push_back(range.CoverRange(Range::FromMinExtent(0, buffers[i]->shape[j])));
+        }
+      } catch (const std::exception& e) {
+        // Fallback to full buffer range if symbolic analysis fails
+        region.push_back(Range::FromMinExtent(0, buffers[i]->shape[j]));
       }
     }
     res.push_back(BufferRegion(buffers[i], region));
