@@ -76,10 +76,8 @@ public:
   z3::solver solver {*ctx};
 
   /// @brief Memorize pure expressions
-  std::unordered_map<PrimExpr, z3::expr, StructuralHash, StructuralEqual> memo_;
+  std::unordered_map<PrimExpr, z3::expr, StructuralHash, ExprDeepEqual> memo_;
 
-  /// @brief Assume overrides
-  std::vector<PrimExpr> assume_overrides_;
   bool is_assume = false;
 
   /// @brief Namespace for variable naming
@@ -155,20 +153,28 @@ public:
     scope_stack_.push_back({});
     scope_stack_.back().push_back(Scope{Scope::Constraint, Var(), PrimExpr(), PrimExpr(), PrimExpr(), constraint});
     solver.push();
-    // is_assume affects the memoization behavior
     this->is_assume = is_assume;
-    auto e = VisitBool(constraint);
+    solver.add(VisitBool(constraint));
     this->is_assume = false;
-    solver.add(e);
-    auto overrides = std::move(assume_overrides_);
-    assume_overrides_.clear();
-    return [this, overrides]() {
-      solver.pop();
-      for (const auto& expr : assume_overrides_) {
+    auto side_effect_exprs = std::move(side_effect_exprs_);
+    side_effect_exprs_.clear();
+    if(is_assume) {
+      return [this, side_effect_exprs]() {
+        solver.pop();
+        for (const auto& expr : side_effect_exprs) {
+          memo_.erase(expr);
+        }
+        scope_stack_.pop_back();
+      };
+    } else {
+      for(const auto & expr: side_effect_exprs) {
         memo_.erase(expr);
       }
-      scope_stack_.pop_back();
-    };
+      return [this]() {
+        solver.pop();
+        scope_stack_.pop_back();
+      };
+    }
   }
 
   /// @brief Check trivil bad cases, return true if the expr is a bad case
@@ -219,7 +225,7 @@ public:
     if (CheckTrivilBadCases(expr)) return false;
     if (!IsValidDType(expr->dtype)) return false;
     z3::expr_vector constr(*ctx);
-    constr.push_back(!VisitBool(expr));
+    constr.push_back(!ConvertBool(expr));
     auto result = solver.check(constr);
     constr.pop_back();
     return result == z3::unsat;
@@ -236,7 +242,7 @@ public:
     });
     // we add the binding whenever the value is pure, 
     // because non-pure parts are handling by creating free variables in VisitExpr
-    memo_.emplace(var, VisitInt(value));
+    memo_.emplace(var, ConvertInt(value));
   }
 
   /// @brief Bind a variable to a range
@@ -264,9 +270,7 @@ public:
         solver.add(var_expr < ctx->int_val(max_value));
       }
     } else {
-      auto min_expr = VisitInt(range->min);
-      auto max_expr = VisitInt(analyzer->Simplify(range->min + range->extent));
-      solver.add(min_expr >= max_expr || (min_expr <= var_expr && var_expr < max_expr));
+      solver.add(ConvertBool(range->extent <= 0 || (range->min <= var && var < range->min + range->extent)));
     }
   }
 
@@ -341,7 +345,7 @@ public:
     AddScopeDebugMsg(ss);
     ss << "; Trying to prove: " << expr << "\n";
     solver.push();
-    solver.add(!VisitBool(expr));
+    solver.add(!ConvertBool(expr));
     ss << solver.to_smt2();
     solver.pop();
     return ss.str();
@@ -354,9 +358,57 @@ public:
     return ss.str();
   }
 
+  ffi::String GetModel(const PrimExpr & expr) {
+    solver.set("model", true);
+    solver.push();
+    solver.add(!ConvertBool(expr));
+    auto result = solver.check();
+    ffi::String model_str;
+    if (result == z3::sat) {
+      z3::model m = solver.get_model();
+      std::map<std::string, z3::expr> model_map;
+      for(unsigned i = 0; i < m.size(); i++) {
+        z3::func_decl d = m[i];
+        model_map.emplace(d.name().str(), m.get_const_interp(d));
+      }
+      std::stringstream ss;
+      for(const auto & [k, v]: model_map) {
+        ss << "  " << k << " = " << v << "\n";
+      }
+      model_str = ss.str();
+    }
+    solver.pop();
+    solver.set("model", false);
+    return model_str;
+  }
+
 private:
 
   using Z3BinOp = z3::expr(*)(const z3::expr &, const z3::expr &);
+
+  std::vector<PrimExpr> side_effect_exprs_;
+
+  z3::expr ConvertBool(const PrimExpr & e, bool is_assume=false) {
+    this->is_assume = is_assume;
+    auto res = VisitBool(e);
+    for(auto & expr: side_effect_exprs_) {
+      memo_.erase(expr);
+    }
+    side_effect_exprs_.clear();
+    this->is_assume = false;
+    return res;
+  }
+
+  z3::expr ConvertInt(const PrimExpr & e, bool is_assume=false) {
+    this->is_assume = is_assume;
+    auto res = VisitInt(e);
+    for(auto & expr: side_effect_exprs_) {
+      memo_.erase(expr);
+    }
+    side_effect_exprs_.clear();
+    this->is_assume = false;
+    return res;
+  }
 
   /// @brief Visit expression with memoization
   z3::expr VisitExpr(const PrimExpr & e) override {
@@ -364,14 +416,17 @@ private:
       return memo_.at(e);
     }
     auto res =  Base::VisitExpr(e);
-    // if the expression is an assume, we need to memorize it whenever it is pure or not
-    bool pure = SideEffect(e) <= CallEffectKind::kPure;
-    if(is_assume || pure) {
+    auto side_effect = SideEffect(e);
+    if(side_effect <= CallEffectKind::kPure) {
       memo_.emplace(e, res);
-      // if we memorized it during an assume, we need to record it for later cleanup
-      if(is_assume && !pure) {
-        assume_overrides_.emplace_back(e);
+    } else if(side_effect <= CallEffectKind::kReadState) {
+      memo_.emplace(e, res);
+      side_effect_exprs_.emplace_back(e);
+    } else {
+      if(is_assume) {
+        memo_.emplace(e, res);
       }
+      side_effect_exprs_.emplace_back(e);
     }
     return res;
   }
@@ -508,6 +563,9 @@ void Z3Prover::CopyFrom(const Z3Prover & other) {
 }
 ffi::String Z3Prover::GetStats() {
   return impl_->GetStats();
+}
+ffi::String Z3Prover::GetModel(const PrimExpr & expr) {
+  return impl_->GetModel(expr);
 }
 Z3Prover::Z3Prover(Analyzer* parent): impl_(new Impl{parent}) {}
 TVM_DLL Z3Prover::~Z3Prover() {

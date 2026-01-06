@@ -698,6 +698,13 @@ class Z3Prover {
    */
   void SetRLimit(unsigned rlimit);
 
+  /*!
+   * \brief Get the Z3 model for the given expression if satisfiable
+   * \param expr The expression to get the model for
+   * \return The model as a string
+   */
+  ffi::String GetModel(const PrimExpr & expr);
+
  private:
   friend class Analyzer;
   explicit Z3Prover(Analyzer* parent);
@@ -877,6 +884,8 @@ class TVM_DLL Analyzer {
    * \note Analyzer will call into sub-analyzers to get the result.
    */
   PrimExpr Simplify(const PrimExpr& expr, int steps = 2);
+
+  std::function<void()> EnterConstraint(const PrimExpr& constraint, bool is_assume=false);
 };
 
 }  // namespace arith
