@@ -416,6 +416,28 @@ PrimExpr Analyzer::Simplify(const PrimExpr& expr, int steps) {
   return res;
 }
 
+std::function<void()> Analyzer::EnterConstraint(const PrimExpr& constraint, bool is_assume) {
+  // Entering the scope.
+  std::vector<std::function<void()>> recovery_functions;
+  recovery_functions.push_back(this->const_int_bound.EnterConstraint(constraint));
+  recovery_functions.push_back(this->modular_set.EnterConstraint(constraint));
+  recovery_functions.push_back(this->rewrite_simplify.EnterConstraint(constraint, is_assume));
+  recovery_functions.push_back(this->int_set.EnterConstraint(constraint));
+  recovery_functions.push_back(this->transitive_comparisons.EnterConstraint(constraint));
+  recovery_functions.push_back(this->z3_prover.EnterConstraint(constraint));
+
+  return [recovery_functions]() mutable {
+    // Exiting the scope.
+    while (recovery_functions.size()) {
+      auto& func = recovery_functions.back();
+      if (func) {
+        func();
+      }
+      recovery_functions.pop_back();
+    }
+  };
+}
+
 namespace {
 using FnFactory = tvm::ffi::TypedFunction<tvm::ffi::Function(std::string)>;
 static FnFactory BuildAnalyzerFactory(std::shared_ptr<tvm::arith::Analyzer> self) {

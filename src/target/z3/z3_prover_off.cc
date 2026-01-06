@@ -22,7 +22,10 @@ ffi::String Z3Prover::GetSMTLIB2(const ffi::Optional<PrimExpr> expr) {
   return "; Z3 Prover is disabled.";
 }
 void Z3Prover::SetTimeoutMs(unsigned timeout_ms) {}
-void Z3Prover::SetMaxStep(unsigned max_step) {}
+void Z3Prover::SetRLimit(unsigned rlimit) {}
+ffi::String Z3Prover::GetModel(const PrimExpr & expr) {
+  return "; Z3 Prover is disabled.";
+}
 void Z3Prover::CopyFrom(const Z3Prover & other) {}
 ffi::String Z3Prover::GetStats() {
   return "; Z3 Prover is disabled.";
