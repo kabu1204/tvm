@@ -279,7 +279,14 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
           if (dtype_print_location == tir::ScriptDtypePrintLocation::kLast) {
             args.push_back(LiteralDoc::DataType(call->dtype, call_p->Attr("dtype")));
           }
-          return prefix.value()->Call(args);
+          ffi::Array<ffi::String> kwargs_keys;
+          ffi::Array<ExprDoc> kwargs_values;
+          for (const auto& kv : call->annotations) {
+            kwargs_keys.push_back(kv.first);
+            kwargs_values.push_back(
+                d->AsDoc<ExprDoc>(kv.second, call_p->Attr("annotations")->Attr(kv.first)));
+          }
+          return prefix.value()->Call(args, kwargs_keys, kwargs_values);
         }
       } else if (call->op.as<GlobalVarNode>()) {
         prefix = d->AsDoc<ExprDoc>(call->op, call_p->Attr("op"));
@@ -299,7 +306,14 @@ TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)
       if (dtype_print_location == tir::ScriptDtypePrintLocation::kLast) {
         args.push_back(LiteralDoc::DataType(call->dtype, call_p->Attr("dtype")));
       }
-      return prefix.value()->Call(args);
+      ffi::Array<ffi::String> kwargs_keys;
+      ffi::Array<ExprDoc> kwargs_values;
+      for (const auto& kv : call->annotations) {
+        kwargs_keys.push_back(kv.first);
+        kwargs_values.push_back(
+            d->AsDoc<ExprDoc>(kv.second, call_p->Attr("annotations")->Attr(kv.first)));
+      }
+      return prefix.value()->Call(args, kwargs_keys, kwargs_values);
     });
 
 TVM_STATIC_IR_FUNCTOR(IRDocsifier, vtable)

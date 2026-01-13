@@ -51,7 +51,7 @@ inline PrimExpr DispatchLLVMPureIntrin(const PrimExpr& e) {
   for (PrimExpr arg : call->args) {
     cargs.push_back(arg);
   }
-  return tir::Call(call->dtype, tir::builtin::call_llvm_pure_intrin(), cargs);
+  return tir::Call(call->dtype, tir::builtin::call_llvm_pure_intrin(), cargs, call->annotations);
 }
 
 template <unsigned id, int num_signature>
@@ -67,7 +67,7 @@ inline PrimExpr DispatchLLVMIntrin(const PrimExpr& e) {
   for (PrimExpr arg : call->args) {
     cargs.push_back(arg);
   }
-  return tir::Call(call->dtype, tir::builtin::call_llvm_intrin(), cargs);
+  return tir::Call(call->dtype, tir::builtin::call_llvm_intrin(), cargs, call->annotations);
 }
 
 }  // namespace codegen

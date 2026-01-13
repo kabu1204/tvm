@@ -111,7 +111,7 @@ static PrimExpr DispatchIntelShuffle(const PrimExpr& e) {
       << "Intel warp shuffle dose not support width != warp_size";
   ffi::Array<PrimExpr> opencl_args{
       {StringImm("intel_sub_group_shuffle"), call->args[1], call->args[2]}};
-  return Call(call->dtype, builtin::call_pure_extern(), opencl_args);
+  return Call(call->dtype, builtin::call_pure_extern(), opencl_args, call->annotations);
 }
 
 TVM_REGISTER_OP("tir.tvm_warp_shuffle")

@@ -1289,7 +1289,7 @@ void CodeGenCUDA::VisitExpr_(const CallNode* op, std::ostream& os) {
       if (tgt_dtype.is_float4_e2m1fn()) {
         // We view the source as an uint16, and then extract bits of two fp4 numbers,
         // and finally reinterpret the result as fp4x2.
-        value = tir::Call(DataType::UInt(16), tir::builtin::reinterpret(), {value});
+        value = tir::Call(DataType::UInt(16), tir::builtin::reinterpret(), {value}, op->annotations);
         tir::Var temp_var("temp_var", DataType::UInt(16));
         value = tir::Let(
             temp_var, value,
@@ -1297,7 +1297,7 @@ void CodeGenCUDA::VisitExpr_(const CallNode* op, std::ostream& os) {
                                              ((temp_var >> 4) & IntImm(DataType::UInt(16), 0xF0))));
       } else {
         value = tir::Cast(DataType::UInt(16),
-                          tir::Call(DataType::UInt(8), tir::builtin::reinterpret(), {value}));
+                          tir::Call(DataType::UInt(8), tir::builtin::reinterpret(), {value}, op->annotations));
         tir::Var temp_var("temp_var", DataType::UInt(16));
         value = tir::Let(temp_var, value,
                          (temp_var & IntImm(DataType::UInt(16), 0xF)) |
@@ -1308,7 +1308,7 @@ void CodeGenCUDA::VisitExpr_(const CallNode* op, std::ostream& os) {
       if (tgt_dtype.is_float4_e2m1fn()) {
         // We view the source as an uint32, and then extract bits of four fp4 numbers,
         // and finally reinterpret the result as fp4x4.
-        value = tir::Call(DataType::UInt(32), tir::builtin::reinterpret(), {value});
+        value = tir::Call(DataType::UInt(32), tir::builtin::reinterpret(), {value}, op->annotations);
         tir::Var temp_var("temp_var", DataType::UInt(32));
         value = tir::Let(temp_var, value,
                          tir::Cast(DataType::UInt(16),
@@ -1318,7 +1318,7 @@ void CodeGenCUDA::VisitExpr_(const CallNode* op, std::ostream& os) {
                                        ((temp_var >> 12) & IntImm(DataType::UInt(32), 0xF000))));
       } else {
         value = tir::Cast(DataType::UInt(32),
-                          tir::Call(DataType::UInt(16), tir::builtin::reinterpret(), {value}));
+                          tir::Call(DataType::UInt(16), tir::builtin::reinterpret(), {value}, op->annotations));
         tir::Var temp_var("temp_var", DataType::UInt(32));
         value = tir::Let(temp_var, value,
                          (temp_var & IntImm(DataType::UInt(32), 0xF)) |
@@ -1326,7 +1326,7 @@ void CodeGenCUDA::VisitExpr_(const CallNode* op, std::ostream& os) {
                              ((temp_var & IntImm(DataType::UInt(32), 0xF00)) << 8) |
                              ((temp_var & IntImm(DataType::UInt(32), 0xF000)) << 12));
       }
-      os << PrintExpr(tir::Call(tgt_dtype, tir::builtin::reinterpret(), {value}));
+      os << PrintExpr(tir::Call(tgt_dtype, tir::builtin::reinterpret(), {value}, op->annotations));
     } else {
       LOG(FATAL) << "Invalid number of lanes for float4_e2m1fn reinterpret: " << lanes;
     }
