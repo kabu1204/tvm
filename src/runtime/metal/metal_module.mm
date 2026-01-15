@@ -33,6 +33,7 @@
 #include "../pack_args.h"
 #include "../thread_storage_scope.h"
 #include "metal_common.h"
+#include "tvm/runtime/device_api.h"
 
 namespace tvm {
 namespace runtime {
@@ -200,6 +201,12 @@ class MetalWrappedFunc {
       auto stream =
           metal::MetalWorkspace::Global()->CastStreamOrGetDefault(t->stream[device_id], device_id);
 
+      if (!(stream = dynamic_cast<metal::MetalRawStream*>(metal::MetalWorkspace::Global()->CastStreamOrGetDefault(t->stream[device_id], device_id)))) {
+        // stream is not MetalRawStream
+        stream->SetError("Internal error: stream not from torch.");
+        return;
+      }
+
       // skip launching so the error can be printed during sync
       if (stream->HasErrorHappened()) return;
 
@@ -239,7 +246,8 @@ class MetalWrappedFunc {
           stream->SetError(os.str());
         }
       }];
-      [cb commit];
+      // When we reuse torch's command buffer, torch will sync
+      // [cb commit];
     };
   }
 
@@ -324,9 +332,19 @@ ffi::Module MetalModuleLoadFromBytes(const ffi::Bytes& bytes) {
   return MetalModuleCreate(smap, fmap, fmt, "");
 }
 
+void SetMetalStream(TVMStreamHandle stream) {
+  metal::MetalThreadEntry* t = metal::MetalThreadEntry::ThreadLocal();
+  auto s = new metal::MetalRawStream(static_cast<id<MTLCommandBuffer>>(stream));
+  if (t->stream.size() <= t->device.device_id) {
+    t->stream.resize(t->device.device_id);
+  }
+  t->stream[t->device.device_id] = static_cast<TVMStreamHandle>(s);
+}
+
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
-  refl::GlobalDef().def("ffi.Module.load_from_bytes.metal", MetalModuleLoadFromBytes);
+  refl::GlobalDef().def("ffi.Module.load_from_bytes.metal", MetalModuleLoadFromBytes)
+                   .def("metal.SetStream", SetMetalStream);
 }
 }  // namespace runtime
 }  // namespace tvm
