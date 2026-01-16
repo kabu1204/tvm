@@ -230,8 +230,11 @@ class ConstIntBoundAnalyzer::Impl
    * \param divisor The input divsor entry
    * \return The processed entry
    */
-  Entry AssumeNoZeroDivisor(Entry divisor) {
-    ICHECK(!divisor.is_const(0)) << "Find divide by zero";
+  std::optional<Entry> AssumeNoZeroDivisor(Entry divisor) {
+    // If divisor is constant zero, return nullopt to signal fallback
+    if (divisor.is_const(0)) {
+      return std::nullopt;
+    }
     // NOTE: here we make the assumption that
     // divide by zero won't happen in a valid program
     // this is important for us to get a lot of symbolic shape bound right
@@ -274,13 +277,20 @@ class ConstIntBoundAnalyzer::Impl
 
   Entry VisitExpr_(const DivNode* op) final {
     Entry a = VisitExpr(op->a);
-    Entry b = AssumeNoZeroDivisor(VisitExpr(op->b));
-    return HandleDivision(a, b, op->dtype, InfAwareDiv);
+    auto b = AssumeNoZeroDivisor(VisitExpr(op->b));
+    if (!b.has_value()) {
+      return Everything(op->dtype);
+    }
+    return HandleDivision(a, b.value(), op->dtype, InfAwareDiv);
   }
 
   Entry VisitExpr_(const ModNode* op) final {
     Entry a = VisitExpr(op->a);
-    Entry b = AssumeNoZeroDivisor(VisitExpr(op->b));
+    auto b_opt = AssumeNoZeroDivisor(VisitExpr(op->b));
+    if (!b_opt.has_value()) {
+      return Everything(op->dtype);
+    }
+    Entry b = b_opt.value();
 
     if (b.min_value > 0) {
       int64_t b_max_cap = InfAwareAdd(b.max_value, -1);
@@ -320,7 +330,6 @@ class ConstIntBoundAnalyzer::Impl
                          std::min(std::max(a.max_value, (int64_t)0), b_max_cap));
       }
     } else {
-      ICHECK(!b.is_const(0)) << "mod by zero";
       // mod by negative value is rare,
       // and we just use the simpliest rule.
       return Everything(op->dtype);
@@ -329,8 +338,11 @@ class ConstIntBoundAnalyzer::Impl
 
   Entry VisitExpr_(const FloorDivNode* op) final {
     Entry a = VisitExpr(op->a);
-    Entry b = AssumeNoZeroDivisor(VisitExpr(op->b));
-    return HandleDivision(a, b, op->dtype, InfAwareFloorDiv);
+    auto b = AssumeNoZeroDivisor(VisitExpr(op->b));
+    if (!b.has_value()) {
+      return Everything(op->dtype);
+    }
+    return HandleDivision(a, b.value(), op->dtype, InfAwareFloorDiv);
   }
 
   Entry VisitExpr_(const FloorModNode* op) final {
@@ -352,7 +364,11 @@ class ConstIntBoundAnalyzer::Impl
      * That is, min(0, b_min + 1) <= floormod(a, b) <= max(0, b_max - 1)
      */
     Entry a = VisitExpr(op->a);
-    Entry b = AssumeNoZeroDivisor(VisitExpr(op->b));
+    auto b_opt = AssumeNoZeroDivisor(VisitExpr(op->b));
+    if (!b_opt.has_value()) {
+      return Everything(op->dtype);
+    }
+    Entry b = b_opt.value();
 
     if (b.min_value > 0) {
       int64_t b_max_cap = InfAwareAdd(b.max_value, -1);
@@ -391,7 +407,6 @@ class ConstIntBoundAnalyzer::Impl
         return MakeBound(0, b_max_cap);
       }
     } else {
-      ICHECK(!b.is_const(0)) << "floormod by zero";
       int64_t b_min_cap = InfAwareAdd(b.min_value, 1);
       int64_t b_max_cap = InfAwareAdd(b.max_value, -1);
       return Intersect(MakeBound(std::min(static_cast<int64_t>(0), b_min_cap),
