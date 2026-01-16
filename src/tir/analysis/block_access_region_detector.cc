@@ -321,7 +321,12 @@ void BlockReadWriteDetector::Update(std::vector<Buffer>* buffers,
     if ((*buffers)[i].same_as(buffer)) {
       ICHECK_EQ((*regions)[i].size(), region.size()) << "Inconsistent buffer dimension";
       for (size_t j = 0; j < region.size(); ++j) {
-        (*regions)[i][j] = arith::Union({(*regions)[i][j], region[j]});
+        try {
+          (*regions)[i][j] = arith::Union({(*regions)[i][j], region[j]});
+        } catch (const std::exception& e) {
+          // Fallback to full region for this dimension if Union fails
+          (*regions)[i][j] = arith::IntSet::FromRange(Range::FromMinExtent(0, buffer->shape[j]));
+        }
       }
       return;
     }
