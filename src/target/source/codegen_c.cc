@@ -211,6 +211,7 @@ void CodeGenC::PrintExpr(const PrimExpr& n, std::ostream& os) {  // NOLINT(*)
 static bool CheckOutermostBracketMatch(const std::string& s);
 
 void CodeGenC::PrintSSAAssign(const std::string& target, const std::string& src, DataType t) {
+  PrintIndent();
   PrintType(t, stream);
   stream << ' ' << target << " = ";
   if (CheckOutermostBracketMatch(src)) {
@@ -725,12 +726,10 @@ void CodeGenC::VisitExpr_(const CallNode* op, std::ostream& os) {  // NOLINT(*)
       CHECK_EQ(target_dtype.lanes() * target_dtype.bits(),
                source_dtype.lanes() * source_dtype.bits())
           << "reinterpret expects source and target to have the same number of bits";
-      int ssa_scope = BeginScope();
       std::string rhs = SSAGetID(PrintExpr(op->args[0]), source_dtype);
       os << "(*(";
       this->PrintType(target_dtype, os);
       os << " *)(&(" << rhs << ")))";
-      EndScope(ssa_scope);
     } else if (op->op.same_as(builtin::isnan())) {
       os << "(";
       this->PrintExpr(op->args[0], os);

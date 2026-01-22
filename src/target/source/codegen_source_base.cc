@@ -47,7 +47,6 @@ std::string CodeGenSourceBase::SSAGetID(std::string src, DataType t) {
   e.vid = name_supply_->FreshName("v_");
   e.scope_id = static_cast<int>(scope_mark_.size() - 1);
   ssa_assign_map_[src] = e;
-  this->PrintIndent();
   PrintSSAAssign(e.vid, src, t);
   return e.vid;
 }
