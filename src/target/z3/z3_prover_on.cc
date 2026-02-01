@@ -224,17 +224,11 @@ public:
   /// @brief Check if the expression can be proved
   bool CanProve(const PrimExpr &expr) {
     if (CheckTrivilBadCases(expr)) return false;
-    LOG(INFO) << "1";
     if (!IsValidDType(expr->dtype)) return false;
-    LOG(INFO) << "2";
     z3::expr_vector constr(*ctx);
     constr.push_back(!ConvertBool(expr));
     auto result = solver.check(constr);
     constr.pop_back();
-    LOG(INFO) << "3";
-    LOG(INFO) << "result: " << (result == z3::unknown);
-    LOG(INFO) << "result: " << (result == z3::sat);
-    LOG(INFO) << "result: " << (result == z3::unsat);
     return result == z3::unsat;
   }
 
