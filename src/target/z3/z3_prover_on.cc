@@ -107,7 +107,7 @@ public:
     // Z3's implementation of timeout, when setting timeout T ms, it will stop at T - 1 ms
     // SetTimeoutMs(5);
     // use rlimit, not timeout to ensure determinstic behavior
-    SetRLimit(1e5);
+    SetRLimit(1e4);
   }
 
   /// @brief Create a Free z3 expression from PrimExprNode
@@ -232,7 +232,7 @@ public:
     return result == z3::unsat;
   }
 
-  /// @brief Binded 
+  /// @brief Binded
   /// @brief Bind a variable to a value or a range
   void Bind(const Var & var, const PrimExpr & value, bool allow_override = false) {
     if (!IsValidDType(var->dtype)) return;
@@ -241,7 +241,7 @@ public:
       var,
       value
     });
-    // we add the binding whenever the value is pure, 
+    // we add the binding whenever the value is pure,
     // because non-pure parts are handling by creating free variables in VisitExpr
     memo_.emplace(var, ConvertInt(value));
   }
@@ -437,7 +437,7 @@ private:
     if(memo_.count(e)) {
       return false;
     }
-    return e->IsInstance<CallNode>() 
+    return e->IsInstance<CallNode>()
       || e->IsInstance<BufferLoadNode>()
       || e->IsInstance<ProducerLoadNode>()
       || e->IsInstance<ReduceNode>()
@@ -478,7 +478,7 @@ private:
     }
   }
 
-  z3::expr VisitExpr_(const LetNode *op) override { 
+  z3::expr VisitExpr_(const LetNode *op) override {
     if (IsValidDType(op->var->dtype)) {
       memo_.emplace(op->var, VisitInt(op->value));
     }
