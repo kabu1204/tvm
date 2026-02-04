@@ -260,6 +260,7 @@ public:
     //    if the var is overrided later, we can just update the memo, and the old placeholder will be ignored
     auto var_expr = Create(var.as<PrimExprNode>());
     memo_.emplace(var, var_expr);
+
     // 2. Add constraint on the placeholder
     //    when min_expr >= max_expr, the range is empty, which is under undefined behavior
     //    instead of adding an unsat constraint, we just skip the range constraint to leave it a free var
@@ -383,6 +384,95 @@ public:
     return model_str;
   }
 
+  /*!
+   * \brief Count the number of distinct integer values satisfying current constraints.
+   *
+   * Uses Z3's model enumeration (AllSAT pattern) to count solutions:
+   * 1. Find a satisfying assignment
+   * 2. Add a blocking clause to exclude it
+   * 3. Repeat until UNSAT
+   *
+   * \param var The variable to count values for
+   * \param max_count Safety limit on enumeration
+   * \param min_consecutive Minimum consecutive count requirement (0 to disable)
+   * \return Number of satisfying values, -1 on error, -2 if min_consecutive constraint not met
+   */
+  int64_t CountSatisfyingValues(const Var& var, int64_t max_count, int64_t min_consecutive = 1) {
+    if (!IsValidDType(var->dtype)) {
+      return -1;
+    }
+
+    solver.set("model", true);
+    solver.push();
+
+    // Convert the TVM variable to Z3 expression
+    z3::expr z3_var = VisitInt(var);
+
+    int64_t count = 0;
+    std::vector<int64_t> found_values;
+
+    while (count < max_count) {
+      auto result = solver.check();
+      if (result != z3::sat) {
+        break;  // No more solutions
+      }
+
+      z3::model m = solver.get_model();
+      z3::expr val_expr = m.eval(z3_var, true);
+
+      // Extract the integer value from Z3 expression
+      int64_t val;
+      if (val_expr.is_numeral()) {
+        val = val_expr.get_numeral_int64();
+      } else {
+        // If we can't get a concrete value, stop enumeration
+        break;
+      }
+
+      found_values.push_back(val);
+      count++;
+
+      // Add blocking clause: var != val (exclude this solution)
+      solver.add(z3_var != ctx->int_val(val));
+    }
+
+    solver.pop();
+    solver.set("model", false);
+
+    // Clear any side effects from visiting the variable
+    for (const auto& expr : side_effect_exprs_) {
+      memo_.erase(expr);
+    }
+    side_effect_exprs_.clear();
+
+    // Check minimum consecutive constraint if enabled
+    if (min_consecutive > 0 && count > 0) {
+      // Sort the values to check consecutive groups
+      std::sort(found_values.begin(), found_values.end());
+
+      // Check that all values form groups of at least min_consecutive consecutive numbers
+      int64_t consecutive_count = 1;
+      for (size_t i = 1; i < found_values.size(); i++) {
+        if (found_values[i] == found_values[i - 1] + 1) {
+          // Consecutive value
+          consecutive_count++;
+        } else {
+          // Gap found, check if the previous group meets the minimum
+          if (consecutive_count < min_consecutive) {
+            return -2;  // Previous group too small
+          }
+          consecutive_count = 1;  // Start new group
+        }
+      }
+      // Check the last group
+      if (consecutive_count < min_consecutive) {
+        return -2;  // Last group too small
+      }
+    }
+
+    return count;
+  }
+
 private:
 
   using Z3BinOp = z3::expr(*)(const z3::expr &, const z3::expr &);
@@ -493,7 +583,9 @@ private:
       return Create(op);
     }
   }
-  z3::expr VisitExpr_(const VarNode *op) override { return Create(op); }
+  z3::expr VisitExpr_(const VarNode *op) override {
+    return Create(op);
+  }
   z3::expr VisitExpr_(const BufferLoadNode *op) override { return Create(op); }
   z3::expr VisitExpr_(const ProducerLoadNode *op) override { return Create(op); }
   z3::expr VisitExpr_(const ReduceNode *op) override { return Create(op); }
@@ -663,6 +755,9 @@ ffi::String Z3Prover::GetStats() {
 }
 ffi::String Z3Prover::GetModel(const PrimExpr & expr) {
   return impl_->GetModel(expr);
+}
+TVM_DLL int64_t Z3Prover::CountSatisfyingValues(const Var& var, int64_t max_count, int64_t min_consecutive) {
+  return impl_->CountSatisfyingValues(var, max_count, min_consecutive);
 }
 Z3Prover::Z3Prover(Analyzer* parent): impl_(new Impl{parent}) {}
 TVM_DLL Z3Prover::~Z3Prover() {
