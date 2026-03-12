@@ -180,6 +180,8 @@ class CUDAWrappedFunc {
     std::fill(fcache_.begin(), fcache_.end(), nullptr);
     // Track whether this kernel uses dynamic shared memory and the last size set per device.
     std::fill(dyn_smem_initialized_.begin(), dyn_smem_initialized_.end(), false);
+    // Track whether cluster attribute has been set per device.
+    std::fill(cluster_attr_initialized_.begin(), cluster_attr_initialized_.end(), false);
     use_dyn_shared_memory_ = false;
     for (const auto& tag : launch_param_tags) {
       if (tag == launch_param::kUseDynamicSharedMemoryTag) {
@@ -219,7 +221,42 @@ class CUDAWrappedFunc {
     CUstream strm = static_cast<CUstream>(TVMFFIEnvGetStream(kDLCUDA, device_id));
     CUresult result;
 
-    if (launch_param_config_.use_programtic_dependent_launch()) {
+    if (wl.use_cluster_launch()) {
+      // SM90+ cluster launch
+      CUlaunchConfig config{};
+      CUlaunchAttribute attribute[2]{};
+      attribute[0].id = CU_LAUNCH_ATTRIBUTE_CLUSTER_DIMENSION;
+      attribute[0].value.clusterDim.x = wl.cluster_dim[0];
+      attribute[0].value.clusterDim.y = wl.cluster_dim[1];
+      attribute[0].value.clusterDim.z = wl.cluster_dim[2];
+      attribute[1].id = CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION;
+      attribute[1].value.programmaticStreamSerializationAllowed = 1;
+
+      config.attrs = attribute;
+      config.numAttrs = 2;
+      config.hStream = strm;
+      config.gridDimX = wl.grid_dim(0);
+      config.gridDimY = wl.grid_dim(1);
+      config.gridDimZ = wl.grid_dim(2);
+      config.blockDimX = wl.block_dim(0);
+      config.blockDimY = wl.block_dim(1);
+      config.blockDimZ = wl.block_dim(2);
+      config.sharedMemBytes = wl.dyn_shmem_size;
+
+      // Set non-portable cluster size allowed attribute
+      if (!cluster_attr_initialized_[device_id]) {
+        CUresult attr_result = cuFuncSetAttribute(
+            fcache_[device_id], CU_FUNC_ATTRIBUTE_NON_PORTABLE_CLUSTER_SIZE_ALLOWED, 1);
+        if (attr_result != CUDA_SUCCESS) {
+          const char* msg;
+          cuGetErrorName(attr_result, &msg);
+          LOG(FATAL) << "Failed to set cluster attribute for " << func_name_ << ": " << msg;
+        }
+        cluster_attr_initialized_[device_id] = true;
+      }
+
+      result = cuLaunchKernelEx(&config, fcache_[device_id], void_args, nullptr);
+    } else if (launch_param_config_.use_programtic_dependent_launch()) {
       CUlaunchConfig config{};
       CUlaunchAttribute attribute[1]{};
       attribute[0].id = CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION;
@@ -284,6 +321,8 @@ class CUDAWrappedFunc {
   // Cached last dynamic shared memory size per device and whether it's initialized
   mutable std::array<size_t, kMaxNumGPUs> dyn_smem_last_;
   mutable std::array<bool, kMaxNumGPUs> dyn_smem_initialized_;
+  // Whether cluster attribute has been initialized per device
+  mutable std::array<bool, kMaxNumGPUs> cluster_attr_initialized_;
   // have pdl setting
   bool has_programmatic_dependent_launch_;
 };
