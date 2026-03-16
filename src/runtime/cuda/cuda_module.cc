@@ -43,6 +43,15 @@
 
 namespace tvm {
 namespace runtime {
+namespace {
+
+inline void EnsureCurrentDeviceContext(int device_id) {
+  // Driver API entry points require a current context on this thread. `cudaGetDevice`
+  // reports the logical device, but it does not guarantee the primary context is bound.
+  CUDA_CALL(cudaSetDevice(device_id));
+}
+
+}  // namespace
 
 // Module to support thread-safe multi-GPU execution.
 // cuModule is a per-GPU module
@@ -112,6 +121,7 @@ class CUDAModuleNode : public ffi::ModuleObj {
   // get a CUfunction from primary context in device_id
   CUfunction GetFunc(int device_id, const std::string& func_name) {
     std::lock_guard<std::mutex> lock(mutex_);
+    EnsureCurrentDeviceContext(device_id);
     // must recheck under the lock scope
     if (module_[device_id] == nullptr) {
       CUDA_DRIVER_CALL(cuModuleLoadData(&(module_[device_id]), data_.c_str()));
@@ -132,6 +142,7 @@ class CUDAModuleNode : public ffi::ModuleObj {
   // get a global var from primary context in device_id
   CUdeviceptr GetGlobal(int device_id, const std::string& global_name, size_t expect_nbytes) {
     std::lock_guard<std::mutex> lock(mutex_);
+    EnsureCurrentDeviceContext(device_id);
     // must recheck under the lock scope
     if (module_[device_id] == nullptr) {
       CUDA_DRIVER_CALL(cuModuleLoadData(&(module_[device_id]), data_.c_str()));
@@ -195,6 +206,7 @@ class CUDAWrappedFunc {
   void operator()(ffi::PackedArgs args, ffi::Any* rv, void** void_args) const {
     int device_id;
     CUDA_CALL(cudaGetDevice(&device_id));
+    EnsureCurrentDeviceContext(device_id);
     ThreadWorkLoad wl = launch_param_config_.Extract(args);
 
     if (fcache_[device_id] == nullptr) {
@@ -336,6 +348,7 @@ class CUDAPrepGlobalBarrier {
   void operator()(const ffi::PackedArgs& args, ffi::Any* rv) const {
     int device_id;
     CUDA_CALL(cudaGetDevice(&device_id));
+    EnsureCurrentDeviceContext(device_id);
     if (pcache_[device_id] == 0) {
       pcache_[device_id] =
           m_->GetGlobal(device_id, runtime::symbol::tvm_global_barrier_state, sizeof(unsigned));
