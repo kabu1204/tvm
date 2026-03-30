@@ -300,10 +300,7 @@ class LaunchParamConfig {
         // Cluster dim Z
         w.cluster_dim[2] = size > 0 ? size : 1;
       } else {
-        // Dynamic shapes can result in 0 dim size. Guard to ensure that the dim size is at least 1.
-        if (size > 0) {
-          w.work_size[idx] = size;
-        }
+        w.work_size[idx] = size;
       }
     }
     if (use_dyn_shared_memory_) {

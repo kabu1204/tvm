@@ -233,6 +233,13 @@ class CUDAWrappedFunc {
     CUstream strm = static_cast<CUstream>(TVMFFIEnvGetStream(kDLCUDA, device_id));
     CUresult result;
 
+    ICHECK(wl.grid_dim(0) > 0 && wl.grid_dim(1) > 0 && wl.grid_dim(2) > 0)
+        << "CUDALaunch Error: grid dimension must be positive, but got"
+        << " grid=(" << wl.grid_dim(0) << "," << wl.grid_dim(1) << "," << wl.grid_dim(2) << ")"
+        << " in kernel " << func_name_
+        << ". A zero grid dimension is often caused by a dynamic shape"
+        << " (e.g. num_tokens) being 0 at runtime.";
+
     if (wl.use_cluster_launch()) {
       // SM90+ cluster launch
       CUlaunchConfig config{};
