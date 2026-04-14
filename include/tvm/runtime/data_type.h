@@ -72,7 +72,8 @@ class DataType {
     kFloat6_e2m3fn = kDLFloat6_e2m3fn,
     kFloat6_e3m2fn = kDLFloat6_e3m2fn,
     kFloat4_e2m1fn = kDLFloat4_e2m1fn,
-    kCustomBegin = 129
+    kCustomBegin = 129,
+    kTensorFloat32 = 130
   };
   /*! \brief default constructor */
   DataType() { data_ = DataType::Void(); }
@@ -108,6 +109,9 @@ class DataType {
     }
     if (code == kFloat4_e2m1fn) {
       ICHECK_EQ(bits, 4);
+    }
+    if (code == kTensorFloat32) {
+      ICHECK_EQ(bits, 32);
     }
   }
   /*! \return The type code. */
@@ -146,6 +150,8 @@ class DataType {
   bool is_float() const { return code() == DataType::kFloat; }
   /*! \return whether type is a bfloat type. */
   bool is_bfloat() const { return code() == DataType::kBFloat; }
+  /*! \return whether type is a tfloat type. */
+  bool is_tfloat() const { return code() == DataType::kTensorFloat32; }
   /*! \return whether type is any 8-bit custom Float8 variant. */
   bool is_float8() const {
     return bits() == 8 &&
@@ -185,6 +191,8 @@ class DataType {
   bool is_float6_e3m2fn() const { return bits() == 6 && code() == DataType::kFloat6_e3m2fn; }
   /*! \return whether type is Float4E2M1FN. */
   bool is_float4_e2m1fn() const { return bits() == 4 && code() == DataType::kFloat4_e2m1fn; }
+  /*! \return whether type is a tfloat32 type. */
+  bool is_tfloat32() const { return bits() == 32 && code() == DataType::kTensorFloat32; }
   /*! \return whether type is a float16 type. */
   bool is_float16() const { return is_float() && bits() == 16; }
   /*! \return whether type is a bfloat16 type. */
@@ -377,6 +385,14 @@ class DataType {
    * \return The constructed data type.
    */
   static DataType Float4E2M1FN(int lanes = 1) { return DataType(kFloat4_e2m1fn, 4, lanes); }
+
+  /*!
+   * \brief Construct a tensorfloat32 datatype.
+   * \param lanes The number of lanes
+   * \return The constructed data type.
+   */
+  static DataType TensorFloat32(int lanes = 1) { return DataType(kTensorFloat32, 32, lanes); }
+
   /*!
    * \brief Construct a bool type.
    * \param lanes The number of lanes.
